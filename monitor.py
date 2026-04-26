@@ -6,8 +6,11 @@ Designed to run once and exit (e.g. on a GitHub Actions cron schedule).
 On each run it:
   1. Fetches all open issues currently labeled "Help Wanted" in Expensify/App.
   2. Compares against seen_issues.json (committed in the repo).
-  3. Posts a Discord message for any newly-seen issues.
-  4. Updates seen_issues.json so the next run remembers.
+  3. Posts a Discord message for any newly-labeled issues.
+  4. Replaces seen_issues.json with the CURRENT list — so issues that lost
+     the label, were closed, or otherwise dropped out are removed from
+     state. This means if an issue ever gets the label re-applied later,
+     we'll notify again instead of silently ignoring it.
 
 On the very first run (no state file yet) it silently catalogues the
 existing backlog so you don't get spammed with hundreds of historical
@@ -104,26 +107,26 @@ def main():
 
     issues = fetch_help_wanted_issues()
     current_ids = {i["id"] for i in issues}
-    new_ids = current_ids - seen
-    print(f"GitHub returned {len(current_ids)} Help Wanted issues. {len(new_ids)} are new.")
 
-    if first_run:
-        if ANNOUNCE_BACKLOG_ON_FIRST_RUN:
-            print(f"First run: announcing all {len(issues)} backlog issues.")
-            for issue in issues:
-                post_to_discord(issue)
-                seen.add(issue["id"])
-        else:
-            print(f"First run: cataloguing {len(current_ids)} existing issues silently.")
-            seen = current_ids
+    new_ids = current_ids - seen          # issues that just got the label
+    dropped_ids = seen - current_ids      # issues that lost the label / were closed
+
+    print(f"GitHub returned {len(current_ids)} Help Wanted issues.")
+    print(f"  -> {len(new_ids)} newly labeled")
+    print(f"  -> {len(dropped_ids)} dropped from Help Wanted (label removed or issue closed)")
+
+    if first_run and not ANNOUNCE_BACKLOG_ON_FIRST_RUN:
+        print(f"First run: cataloguing {len(current_ids)} existing issues silently.")
     else:
         for issue in issues:
             if issue["id"] in new_ids:
-                print(f"  -> NEW: #{issue['number']} {issue['title']}")
+                print(f"  NEW: #{issue['number']} {issue['title']}")
                 post_to_discord(issue)
-                seen.add(issue["id"])
 
-    save_seen(seen)
+    # Replace state with the CURRENT set of Help Wanted issues.
+    # This automatically removes any issues that lost the label or were closed,
+    # so if they ever get the label re-applied we'll notify again.
+    save_seen(current_ids)
     print("Done.")
 
 
