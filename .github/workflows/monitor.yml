@@ -1,1 +1,51 @@
 
+name: Monitor Expensify Help Wanted
+
+on:
+  schedule:
+    # Runs every 5 minutes. GitHub's minimum cron interval.
+    # Note: scheduled runs can be delayed by several minutes during high platform load.
+    - cron: '*/5 * * * *'
+  workflow_dispatch:   # also allows manual runs from the Actions tab
+
+# Allow the workflow to commit the updated state file back to the repo
+permissions:
+  contents: write
+
+# Prevent two runs from overlapping if a previous run is slow
+concurrency:
+  group: monitor
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run monitor
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python monitor.py
+
+      - name: Commit updated state
+        run: |
+          if [[ -n "$(git status --porcelain seen_issues.json)" ]]; then
+            git config user.name  "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add seen_issues.json
+            git commit -m "Update seen_issues.json"
+            git push
+          else
+            echo "No state changes to commit."
+          fi
