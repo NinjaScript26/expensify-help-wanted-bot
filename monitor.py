@@ -1,20 +1,13 @@
 #!/usr/bin/env python3
 """
 Expensify "Help Wanted" issue monitor -> Discord webhook.
+GITHUB ACTIONS VERSION (NIGHT SHIFT).
 
-Designed to run once and exit (e.g. on a GitHub Actions cron schedule).
-On each run it:
-  1. Fetches all open issues currently labeled "Help Wanted" in Expensify/App.
-  2. Compares against seen_issues.json (committed in the repo).
-  3. Posts a Discord message for any newly-labeled issues.
-  4. Replaces seen_issues.json with the CURRENT list — so issues that lost
-     the label, were closed, or otherwise dropped out are removed from
-     state. This means if an issue ever gets the label re-applied later,
-     we'll notify again instead of silently ignoring it.
+Runs once per workflow trigger, scheduled by .github/workflows/monitor.yml
+to fire only during the night shift window (Frankfurt 18:00-08:00).
 
-On the very first run (no state file yet) it silently catalogues the
-existing backlog so you don't get spammed with hundreds of historical
-issues. Flip ANNOUNCE_BACKLOG_ON_FIRST_RUN to True if you want them all.
+State is persisted to seen_issues.json which is committed back to the repo
+after every run.
 """
 
 import json
@@ -29,8 +22,8 @@ REPO = "Expensify/App"
 LABEL = "Help Wanted"
 STATE_FILE = Path("seen_issues.json")
 
-DISCORD_WEBHOOK_URL = os.environ["DISCORD_WEBHOOK_URL"]   # required
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")             # provided automatically by Actions
+DISCORD_WEBHOOK_URL = os.environ["DISCORD_WEBHOOK_URL"]
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")  # provided automatically by Actions
 
 ANNOUNCE_BACKLOG_ON_FIRST_RUN = False
 
@@ -46,12 +39,7 @@ def fetch_help_wanted_issues():
     issues = []
     page = 1
     while True:
-        params = {
-            "labels": LABEL,
-            "state": "open",
-            "per_page": 100,
-            "page": page,
-        }
+        params = {"labels": LABEL, "state": "open", "per_page": 100, "page": page}
         r = requests.get(url, headers=headers, params=params, timeout=30)
         r.raise_for_status()
         batch = r.json()
@@ -108,8 +96,8 @@ def main():
     issues = fetch_help_wanted_issues()
     current_ids = {i["id"] for i in issues}
 
-    new_ids = current_ids - seen          # issues that just got the label
-    dropped_ids = seen - current_ids      # issues that lost the label / were closed
+    new_ids = current_ids - seen
+    dropped_ids = seen - current_ids
 
     print(f"GitHub returned {len(current_ids)} Help Wanted issues.")
     print(f"  -> {len(new_ids)} newly labeled")
@@ -123,9 +111,6 @@ def main():
                 print(f"  NEW: #{issue['number']} {issue['title']}")
                 post_to_discord(issue)
 
-    # Replace state with the CURRENT set of Help Wanted issues.
-    # This automatically removes any issues that lost the label or were closed,
-    # so if they ever get the label re-applied we'll notify again.
     save_seen(current_ids)
     print("Done.")
 
