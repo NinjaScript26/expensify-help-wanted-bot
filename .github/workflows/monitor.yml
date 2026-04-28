@@ -1,18 +1,29 @@
-
 name: Monitor Expensify Help Wanted
+
+# NIGHT SHIFT: runs only during Frankfurt 18:00-08:00.
+#
+# GitHub cron uses UTC. Frankfurt timezone:
+#   Summer (CEST, UTC+2):  Frankfurt 18:00-08:00  ==  UTC 16:00-06:00  ← currently active (April 2026)
+#   Winter (CET,  UTC+1):  Frankfurt 18:00-08:00  ==  UTC 17:00-07:00
+# When DST changes (last Sunday of October), shift the UTC hours by +1 to keep
+# the literal Frankfurt window. For now we use the summer window.
+#
+# Two cron lines for redundancy — GitHub silently drops scheduled runs under load.
+# Interval ~10 min × 2 lines = up to 12 attempts/hour, but actual run rate is
+# usually 3-6/hour due to GitHub's free-tier scheduler throttling.
+#
+# API budget: even if every trigger fires, ~3 API calls per run × 12/hr × 14h
+# = 504 calls per night, well under the 1,000/hr/repo GITHUB_TOKEN limit.
 
 on:
   schedule:
-    # Runs every 5 minutes. GitHub's minimum cron interval.
-    # Note: scheduled runs can be delayed by several minutes during high platform load.
-    - cron: '*/5 * * * *'
-  workflow_dispatch:   # also allows manual runs from the Actions tab
+    - cron: '*/10 16-23,0-5 * * *'      # every 10 min during UTC 16-23 + 0-5
+    - cron: '5,25,45 16-23,0-5 * * *'   # extra triggers offset by 5 min
+  workflow_dispatch:                     # also allows manual runs
 
-# Allow the workflow to commit the updated state file back to the repo
 permissions:
   contents: write
 
-# Prevent two runs from overlapping if a previous run is slow
 concurrency:
   group: monitor
   cancel-in-progress: false
